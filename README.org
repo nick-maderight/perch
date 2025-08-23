@@ -1,3 +1,7 @@
+#+begin_quote
+Development for this project has moved to sourcehut [[https://git.sr.ht/~lepisma/emacs-speech-input][here]]. This repository is now in a read-only state.
+#+end_quote
+
 #+TITLE: Emacs Speech Input
 
 #+HTML: <img alt="GitHub" src="https://img.shields.io/github/license/lepisma/emacs-speech-input?style=flat-square">
