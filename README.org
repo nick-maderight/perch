@@ -1,67 +1,79 @@
-#+begin_quote
-Development for this project has moved to sourcehut [[https://git.sr.ht/~lepisma/emacs-speech-input][here]]. This repository is now in a read-only state.
-#+end_quote
+#+TITLE: Perch — local dictation for Emacs with NVIDIA Parakeet
 
-#+TITLE: Emacs Speech Input
+* What it is
+Perch is a fork of [[https://github.com/lepisma/emacs-speech-input][esi-dictate]]. It replaces Deepgram with NVIDIA Parakeet through [[https://github.com/senstella/parakeet-mlx][parakeet-mlx]], so speech recognition runs on the local Apple Silicon machine.
 
-#+HTML: <img alt="GitHub" src="https://img.shields.io/github/license/lepisma/emacs-speech-input?style=flat-square">
+Audio stays on the machine. Optional LLM cleanup can revise the current voice context after an utterance.
 
-Set of packages for speech and voice inputs in Emacs. Use cases are explained
-next with the packages they are available in:
+* How it works
+=perch-dictate-start= launches =perch_server.py= through =uv run --script=, which creates the Python environment on first use. The server reads the microphone in 100 ms blocks and segments speech with an energy threshold. While you speak, a Parakeet streaming decoder produces an interim transcript about once a second; Emacs shows it in =perch-dictate-intermittent-face= and replaces it on every update. When =perch-dictate-utterance-end-ms= of silence follows, the server runs a full offline decode over the whole utterance and Emacs replaces the interim text with that final result, then runs =perch-dictate-speech-final-hook=. On an M1 Max the streaming decode keeps up at roughly 0.25x real time and the final decode of a 24 s utterance takes under a second.
 
-** Dictation with Real-Time Editing
-~esi-dictate~ is aimed to help you input faster[fn::Needs more work and empirical
-validation.]  than simply using voice with post-edits or typing in. It allows
-blended workflows of voice and keyboard inputs assisted via LLMs for real time
-edits.
+On macOS the first =perch-dictate-start= triggers the system microphone permission prompt for Emacs. Until you allow it, the server reports the model as loaded but never becomes ready.
 
-At the very basic, it's a dictation tool allowing real-time edits. Most of the
-content gets inserted in the buffer via voice at a /voice cursor/. Utterances are
-automatically inferred as having edit suggestions, in which case, the current
-/voice context/ (displayed differently) is edited via an LLM.
+* Requirements
+- An Apple Silicon Mac.
+- [[https://docs.astral.sh/uv/][uv]] with Emacs 29.1 or newer.
+- The first run downloads the selected model from Hugging Face. The default model uses about 1.3 GB.
 
-While working, the keyboard cursor is kept free so you can keep making finer
-edits independent of the dictation work.
-
-Some more notes on the design are in my blog post [[https://lepisma.xyz/2024/09/12/emacs-dictation-mode/index.html][here]].
-
-*** Usage
-Presently this systems uses Deepgram via a Python script ~dg.py~ that you need to
-put in your ~PATH~ somewhere. Python >=3.10 is required. Afterwards, you would need
-to set the following configuration:
+* Install
+Install Perch with =use-package= and its VC support.
 
 #+begin_src emacs-lisp
-  (use-package esi-dictate
-    :vc (:fetcher github :repo lepisma/emacs-speech-input)
-    :custom
-    (esi-dictate-dg-api-key "<DEEPGRAM-API-KEY>")
-    (esi-dictate-llm-provider <llm-provider-using-llm.el>)
-    ; Here is an example configuration for using OpenAI's
-    ; (esi-dictate-llm-provider (make-llm-openai :key "<OPENAI-API-KEY>" :chat-model "gpt-4o-mini"))
-    :bind (:map esi-dictate-mode-map
-                ("C-g" . esi-dictate-stop))
-    :config
-    (setq llm-warn-on-nonfree nil)
-    :hook (esi-dictate-speech-final . esi-dictate-fix-context))
+(use-package perch-dictate
+  :vc (:url "https://github.com/nick-maderight/perch" :rev :newest)
+  :bind (:map perch-dictate-mode-map
+              ("C-g" . perch-dictate-stop)))
 #+end_src
 
-Start dictation mode using ~esi-dictate-start~.  Use ~esi-dictate-stop~ to exit
-dictation mode. ~esi-dictate-fix-context~ is hooked to utterance end and does
-general fixes without asking for explicit commands. If you mark a region and
-call ~esi-dictate-move-here~, the voice context and cursor will move to the region
-bounds. If you just need to move the voice cursor, call move here function after
-moving point to the appropriate position.
+LLM cleanup is optional. Add an LLM provider and the final hook when you want automatic context cleanup.
 
-As of now this uses non-free models for both transcriptions (Deepgram) and edits
-(GPT4o-mini). This will change in the future.
+#+begin_src emacs-lisp
+(use-package llm)
+(use-package llm-openai
+  :after llm
+  :demand t)
 
-*** Customization
-To improve LLM performance, you can customize the ~esi-dictate-llm-prompt~ and add
-few shot examples in ~esi-dictate-fix-examples~.
+(use-package perch-dictate
+  :vc (:url "https://github.com/nick-maderight/perch" :rev :newest)
+  :custom
+  (perch-dictate-llm-provider
+   (make-llm-openai :key "<OPENAI-API-KEY>" :chat-model "gpt-4o-mini"))
+  :bind (:map perch-dictate-mode-map
+              ("C-g" . perch-dictate-stop))
+  :config
+  (setq llm-warn-on-nonfree nil)
+  :hook (perch-dictate-speech-final . perch-dictate-fix-context))
+#+end_src
 
-For visual improvements, customize ~esi-dictate-cursor~, ~esi-dictate-cursor-face~,
-~esi-dictate-intermittent-face~, and ~esi-dictate-context-face~.
+* Usage
+Run =perch-dictate-start= to start the server in the current buffer. End the server and remove the voice cursor with =perch-dictate-stop=. Use =perch-dictate-toggle= to start or stop dictation. Move the voice cursor with =perch-dictate-move-here= at point or across the active region. Send the current voice context to the configured LLM with =perch-dictate-fix-context=.
 
-** Flight-mode Recording
-This is available as a dynamic module (~esi-core~) which needs a bit of clean up
-before I document the usage.
+The voice cursor is separate from the keyboard point. Dictation inserts text at the voice cursor while you continue using the keyboard point. A selected region becomes the voice context, and Perch adds new transcript text at its end.
+
+* Customization
+Set =perch-dictate-model= to another Parakeet repository when needed. Set =perch-dictate-utterance-end-ms= to change the silence duration that ends an utterance. Set =perch-dictate-input-device= to an input device name or leave it nil for the system default.
+
+List available input devices with the standalone server.
+
+#+begin_src sh
+uv run --script perch_server.py --list-devices
+#+end_src
+
+Pass other server options through =perch-dictate-server-args=. Speech is detected when a block's RMS level is at or above =--threshold-db= (default =-45= dBFS); raise it toward =-35= in a noisy room, lower it toward =-55= for a quiet or distant microphone. =--interim-ms= sets how often interim text is refreshed (default =1000=; smaller values cost proportionally more compute).
+
+#+begin_src emacs-lisp
+(setq perch-dictate-server-args '("--threshold-db" "-40"))
+#+end_src
+
+* Run the server standalone
+Run the server with a fixture to inspect its JSON-line protocol.
+
+#+begin_src sh
+uv run --script perch_server.py --input tests/resources/hello-world.wav
+#+end_src
+
+* Tests
+Run the full ERT suite with =make test=. Run unit tests without the local-model integration test with =make test-unit=. Run the byte-compile check with =make compile=.
+
+* Credits and license
+Perch uses the GPL-3 license. Abhinav Tushar wrote the original =esi-dictate= implementation.
