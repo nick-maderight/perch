@@ -8,7 +8,7 @@ Audio stays on the machine. Optional LLM cleanup can revise the current voice co
 * How it works
 =perch-dictate-start= launches =perch_server.py= through =uv run --script=, which creates the Python environment on first use. The server reads the microphone in 100 ms blocks and segments speech with an energy threshold. While you speak, a Parakeet streaming decoder produces an interim transcript about once a second; Emacs shows it in =perch-dictate-intermittent-face= and replaces it on every update. When =perch-dictate-utterance-end-ms= of silence follows, the server runs a full offline decode over the whole utterance and Emacs replaces the interim text with that final result, then runs =perch-dictate-speech-final-hook=. On an M1 Max the streaming decode keeps up at roughly 0.25x real time and the final decode of a 24 s utterance takes under a second.
 
-On macOS the first =perch-dictate-start= triggers the system microphone permission prompt for Emacs. Until you allow it, the server reports the model as loaded but never becomes ready.
+On macOS the first =perch-dictate-start= triggers the system microphone permission prompt for Emacs. While the prompt is open the server stays at the "loaded and warmed" status and does not become ready; allow access and start again.
 
 * Requirements
 - An Apple Silicon Mac.
